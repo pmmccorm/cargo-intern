@@ -1,68 +1,32 @@
 //!
-//! cargo-download
+//! cargo-intern
 //!
 
-             extern crate ansi_term;
-#[macro_use] extern crate clap;
-             extern crate conv;
-#[macro_use] extern crate derive_error;
-             extern crate exitcode;
-             extern crate flate2;
-             extern crate isatty;
-#[macro_use] extern crate lazy_static;
-#[macro_use] extern crate maplit;
-             extern crate reqwest;
-             extern crate semver;
-             extern crate serde_json;
-             extern crate slog_envlogger;
-             extern crate slog_stdlog;
-             extern crate slog_stream;
-             extern crate time;
-             extern crate tar;
-
-// `slog` must precede `log` in declarations here, because we want to simultaneously:
-// * use the standard `log` macros
-// * be able to initialize the slog logger using slog macros like o!()
-#[macro_use] extern crate slog;
-#[macro_use] extern crate log;
-
-
 mod args;
-mod logging;
-
 
 use std::borrow::Cow;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::error::Error;
+use std::env::args_os;
 use std::path::PathBuf;
 use std::process::exit;
 
-use log::LogLevel::*;
+use log::{info, error, debug, trace, log_enabled};
+use log::Level::Info;
+use derive_error::Error;
 use reqwest::header::CONTENT_LENGTH;
 use semver::Version;
 use serde_json::Value as Json;
 
-use args::{ArgsError, Crate, Output};
+use args::{Output, Crate};
 
-
-lazy_static! {
-    /// Application / package name, as filled out by Cargo.
-    static ref NAME: &'static str = option_env!("CARGO_PKG_NAME")
-        .unwrap_or("cargo-download");
-
-    /// Application version, as filled out by Cargo.
-    static ref VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
-}
-
+static NAME: &'static str = env!("CARGO_PKG_NAME");
+static VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 fn main() {
-    let opts = args::parse().unwrap_or_else(|e| {
-        print_args_error(e).unwrap();
-        exit(exitcode::USAGE);
-    });
+    let opts = args::parse(args_os());
 
-    logging::init(opts.verbosity).unwrap();
     log_signature();
 
     let version = match opts.crate_.exact_version() {
@@ -127,26 +91,10 @@ fn main() {
     }
 }
 
-// Print an error that may occur while parsing arguments.
-fn print_args_error(e: ArgsError) -> io::Result<()> {
-    match e {
-        ArgsError::Parse(ref e) =>
-            // In case of generic parse error,
-            // message provided by the clap library will be the usage string.
-            writeln!(&mut io::stderr(), "{}", e.message),
-        e => {
-            writeln!(&mut io::stderr(), "Failed to parse arguments: {}", e)
-        }
-    }
-}
-
 /// Log the program name, version, and other metadata.
-#[inline]
 fn log_signature() {
     if log_enabled!(Info) {
-        let version = VERSION.map(|v| format!("v{}", v))
-            .unwrap_or_else(|| "<UNKNOWN VERSION>".into());
-        info!("{} {}", *NAME, version);
+        info!("{} {}", NAME, VERSION);
     }
 }
 
@@ -155,10 +103,10 @@ const CRATES_API_ROOT: &'static str = "https://crates.io/api/v1/crates";
 
 /// Talk to crates.io to get the newest version of given crate
 /// that matches specified version requirements.
-fn get_newest_version(crate_: &Crate) -> Result<Version, Box<Error>> {
+fn get_newest_version(crate_: &Crate) -> Result<Version, Box<dyn Error>> {
     let versions_url = format!("{}/{}/versions", CRATES_API_ROOT, crate_.name());
     debug!("Fetching latest matching version of crate `{}` from {}", crate_, versions_url);
-    let response: Json = reqwest::get(&versions_url)?.json()?;
+    let response: Json = reqwest::blocking::get(&versions_url)?.json()?;
 
     // TODO: rather that silently skipping over incorrect versions,
     // report them as malformed response from crates.io
@@ -182,10 +130,10 @@ fn get_newest_version(crate_: &Crate) -> Result<Version, Box<Error>> {
 }
 
 /// Download given crate and return it as a vector of gzipped bytes.
-fn download_crate(name: &str, version: &Version) -> Result<Vec<u8>, Box<Error>> {
+fn download_crate(name: &str, version: &Version) -> Result<Vec<u8>, Box<dyn Error>> {
     let download_url = format!("{}/{}/{}/download", CRATES_API_ROOT, name, version);
     debug!("Downloading crate `{}=={}` from {}", name, version, download_url);
-    let mut response = reqwest::get(&download_url)?;
+    let mut response = reqwest::blocking::get(&download_url)?;
 
     let content_length: Option<usize> = response.headers().get(CONTENT_LENGTH)
         .and_then(|ct_len| ct_len.to_str().ok())
