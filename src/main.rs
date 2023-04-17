@@ -21,8 +21,8 @@ use serde_json::Value as Json;
 
 use args::{Output, Crate};
 
-static NAME: &'static str = env!("CARGO_PKG_NAME");
-static VERSION: &'static str = env!("CARGO_PKG_VERSION");
+static NAME: &str = env!("CARGO_PKG_NAME");
+static VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
     let opts = args::parse(args_os());
@@ -39,7 +39,7 @@ fn main() {
             exit(exitcode::TEMPFAIL);
         })),
     };
-    let crate_bytes = download_crate(&opts.crate_.name(), &version).unwrap_or_else(|e| {
+    let crate_bytes = download_crate(opts.crate_.name(), &version).unwrap_or_else(|e| {
         error!("Failed to download crate `{}=={}`: {}", opts.crate_.name(), version, e);
         exit(exitcode::TEMPFAIL);
     });
@@ -58,7 +58,7 @@ fn main() {
                 // If -x option was passed, we need to move the extracted directory
                 // to wherever the user wanted.
                 let mut dir = dir;
-                if let Some(&Output::Path(ref p)) = opts.output.as_ref() {
+                if let Some(Output::Path(p)) = opts.output.as_ref() {
                     fs::rename(&dir, p).unwrap_or_else(|e| {
                         error!("Failed to move extracted archive from {} to {}: {}",
                             dir.display(), p.display(), e);
@@ -75,16 +75,16 @@ fn main() {
         }
     } else {
         let output = opts.output.as_ref().unwrap_or(&Output::Stdout);
-        match output {
-            &Output::Stdout => { io::stdout().write(&crate_bytes).unwrap(); }
-            &Output::Path(ref p) => {
+        match *output {
+            Output::Stdout => { io::stdout().write_all(&crate_bytes).unwrap(); }
+            Output::Path(ref p) => {
                 let mut file = fs::OpenOptions::new()
                     .write(true).create(true)
                     .open(p).unwrap_or_else(|e| {
                         error!("Failed to open output file {}: {}", p.display(), e);
                         exit(exitcode::IOERR)
                     });
-                file.write(&crate_bytes).unwrap();
+                file.write_all(&crate_bytes).unwrap();
                 info!("Crate's archive written to {}", p.display());
             }
         }
@@ -99,7 +99,7 @@ fn log_signature() {
 }
 
 
-const CRATES_API_ROOT: &'static str = "https://crates.io/api/v1/crates";
+const CRATES_API_ROOT: &str = "https://crates.io/api/v1/crates";
 
 /// Talk to crates.io to get the newest version of given crate
 /// that matches specified version requirements.
@@ -125,7 +125,7 @@ fn get_newest_version(crate_: &Crate) -> Result<Version, Box<dyn Error>> {
     let version_req = crate_.version_requirement();
     versions.sort_by(|a, b| b.cmp(a));
     versions.into_iter().find(|v| version_req.matches(v))
-        .map(|v| { info!("Latest version of crate {} is {}", crate_, v); v.to_owned() })
+        .map(|v| { info!("Latest version of crate {} is {}", crate_, v); v })
         .ok_or_else(|| "no matching version found".into())
 }
 

@@ -84,7 +84,7 @@ impl FromStr for Crate {
     type Err = CrateError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<_> = s.splitn(2, "=").map(|p| p.trim()).collect();
+        let parts: Vec<_> = s.splitn(2, '=').map(|p| p.trim()).collect();
         let name = parts[0].to_owned();
         if parts.len() < 2 {
             let valid_name =
@@ -141,8 +141,9 @@ impl FromStr for CrateVersion {
     type Err = CrateVersionError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.starts_with("=") {
-            let version = Version::from_str(&s[1..])?;
+        if s.starts_with('=') {
+            let stripped = s.strip_prefix('=').unwrap();
+            let version = Version::from_str(stripped)?;
             Ok(CrateVersion::Exact(version))
         } else {
             let version_req = VersionReq::from_str(s)?;
@@ -152,9 +153,9 @@ impl FromStr for CrateVersion {
 }
 impl fmt::Display for CrateVersion {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &CrateVersion::Exact(ref v) => write!(fmt, "={}", v),
-            &CrateVersion::Other(ref r) => write!(fmt, "{}", r),
+        match *self {
+            CrateVersion::Exact(ref v) => write!(fmt, "={}", v),
+            CrateVersion::Other(ref r) => write!(fmt, "{}", r),
         }
     }
 }
@@ -185,9 +186,9 @@ impl FromStr for Output {
 }
 impl fmt::Display for Output {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &Output::Path(ref p) => write!(fmt, "{}", p.display()),
-            &Output::Stdout => write!(fmt, "-"),
+        match *self {
+            Output::Path(ref p) => write!(fmt, "{}", p.display()),
+            Output::Stdout => write!(fmt, "-"),
         }
     }
 }
@@ -208,17 +209,17 @@ impl From<CrateVersionError> for CrateError {
 impl Error for CrateError {
     fn description(&self) -> &str { "invalid crate specification" }
     fn cause(&self) -> Option<&dyn Error> {
-        match self {
-            &CrateError::Version(ref e) => Some(e),
+        match *self {
+            CrateError::Version(ref e) => Some(e),
             _ => None,
         }
     }
 }
 impl fmt::Display for CrateError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &CrateError::Name(ref n) => write!(fmt, "invalid crate name `{}`", n),
-            &CrateError::Version(ref e) => write!(fmt, "invalid crate version: {}", e),
+        match *self {
+            CrateError::Name(ref n) => write!(fmt, "invalid crate name `{}`", n),
+            CrateError::Version(ref e) => write!(fmt, "invalid crate version: {}", e),
         }
     }
 }
